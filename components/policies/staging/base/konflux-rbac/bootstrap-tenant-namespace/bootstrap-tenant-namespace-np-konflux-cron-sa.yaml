@@ -1,53 +1,66 @@
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
-  name: init-ns-kubearchiveconfig
+  name: init-ns-cron-sa
 spec:
+  generateExisting: true
   rules:
-  - name: init-ns-cron-sa
-    skipBackgroundRequests: true
-    match:
-      any:
-      - resources:
-          kinds:
-          - Namespace
-          selector:
-            matchLabels:
-              konflux-ci.dev/type: tenant
-    generate:
-      generateExisting: true
-      apiVersion: v1
-      kind: ServiceAccount
-      metadata:
+    - name: generate-serviceaccount
+      match:
+        any:
+        - resources:
+            kinds:
+            - Namespace
+            selector:
+              matchLabels:
+                konflux-ci.dev/type: tenant
+      generate:
+        kind: ServiceAccount
+        apiVersion: v1
         name: konflux-cron-sa
-        namespace: default
-      ---
-      apiVersion: rbac.authorization.k8s.io/v1
-      kind: Role
-      metadata:
-        name: snapshot-access
-        namespace: default
-      rules:
-        - apiGroups: [""]  # Default to core group — we'll override in RoleBinding if needed
-          resources: []
-          verbs: []
-        - apiGroups: ["example.com"]  # Replace with the actual API group of the Snapshot CRD
-          resources: ["snapshots"]
-          verbs: ["get", "list", "watch", "patch"]
-      ---
-      apiVersion: rbac.authorization.k8s.io/v1
-      kind: RoleBinding
-      metadata:
-        name: snapshot-access-binding
-        namespace: default
-      subjects:
-        - kind: ServiceAccount
-          name: konflux-cron-sa
-          namespace: default
-      roleRef:
+        namespace: '{{request.object.metadata.name}}'
+        synchronize: true
+    - name: generate-snapshot-role
+      match:
+        any:
+        - resources:
+            kinds:
+            - Namespace
+            selector:
+              matchLabels:
+                konflux-ci.dev/type: tenant
+      generate:
         kind: Role
+        apiVersion: rbac.authorization.k8s.io/v1
         name: snapshot-access
-        apiGroup: rbac.authorization.k8s.io
-
-
-
+        namespace: '{{request.object.metadata.name}}'
+        synchronize: true
+        data:
+          rules:
+            - apiGroups: ["snapshot.mycompany.io"]  # Replace with actual CRD group
+              resources: ["snapshots"]
+              verbs: ["get", "list", "watch", "patch"]
+    - name: generate-snapshot-rolebinding
+      match:
+        any:
+        - resources:
+            kinds:
+            - Namespace
+            selector:
+              matchLabels:
+                konflux-ci.dev/type: tenant
+      generate:
+        kind: RoleBinding
+        apiVersion: rbac.authorization.k8s.io/v1
+        name: snapshot-access-binding
+        namespace: '{{request.object.metadata.name}}'
+        synchronize: true
+        data:
+          roleRef:
+            kind: Role
+            name: snapshot-access
+            apiGroup: rbac.authorization.k8s.io
+          subjects:
+            - kind: ServiceAccount
+              name: konflux-cron-sa
+              namespace: '{{request.object.metadata.name}}'
