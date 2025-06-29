@@ -1,0 +1,53 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: init-ns-kubearchiveconfig
+spec:
+  rules:
+  - name: init-ns-cron-sa
+    skipBackgroundRequests: true
+    match:
+      any:
+      - resources:
+          kinds:
+          - Namespace
+          selector:
+            matchLabels:
+              konflux-ci.dev/type: tenant
+    generate:
+      generateExisting: true
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: konflux-cron-sa
+        namespace: default
+      ---
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: snapshot-access
+        namespace: default
+      rules:
+        - apiGroups: [""]  # Default to core group — we'll override in RoleBinding if needed
+          resources: []
+          verbs: []
+        - apiGroups: ["example.com"]  # Replace with the actual API group of the Snapshot CRD
+          resources: ["snapshots"]
+          verbs: ["get", "list", "watch", "patch"]
+      ---
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: snapshot-access-binding
+        namespace: default
+      subjects:
+        - kind: ServiceAccount
+          name: konflux-cron-sa
+          namespace: default
+      roleRef:
+        kind: Role
+        name: snapshot-access
+        apiGroup: rbac.authorization.k8s.io
+
+
+
